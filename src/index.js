@@ -85,7 +85,9 @@ export default class Chain {
         const followKey = serialize(follow);
 
         if (!model.has(stateKey)) {
-          model.set(stateKey, new Map());
+          const stateMap = new Map();
+          stateMap.totalCount = 0;
+          model.set(stateKey, stateMap);
         }
 
         const stateMap = model.get(stateKey);
@@ -96,6 +98,7 @@ export default class Chain {
 
         const followMap = stateMap.get(followKey);
         followMap.count += 1;
+        stateMap.totalCount++;
       }
     }
 
@@ -233,6 +236,66 @@ export default class Chain {
   walk(fromState) {
     const steps = [...this.generate(fromState)];
     return steps;
+  }
+
+  /**
+   * Returns the probablity that `run` will be produced by this Markov chain
+   *
+   * @param run {any} the word that would be produced by this Markov chain.
+   * @param options {object} object with the following properties:
+   * {
+   *   includeBeginState {boolean} when true, calculate probability
+   *   including the BEGIN state. Otherwise, calculate probability starting
+   *   from the first `run` state
+   *
+   *   includeEndState {boolean} when true, calculate probability
+   *   including the END state. Otherwise, exclude the probability of reaching the END state
+   * }
+   */
+  likelihoodOf(run, { includeBeginState = true, includeEndState = true }) {
+    const beginPadding = createBeginState(this.stateSize);
+    const paddedRun = [...beginPadding, ...run, END];
+    // total probability is the probability of producing run.slice(n) on the n-th iteration
+    let totalProbability = 1;
+    let start;
+    let end;
+
+    if (includeBeginState) {
+      start = 0;
+    } else {
+      start = this.stateSize; // skip begin state padding
+    }
+
+    if (includeEndState) {
+      end = run.length + 1;
+    } else {
+      end = run.length;
+    }
+
+    for (let ngramStart = start; ngramStart < end; ngramStart++) {
+      const ngramEnd = ngramStart + this.stateSize;
+
+      const stateKey = createStateKey(paddedRun.slice(ngramStart, ngramEnd));
+      const follow = paddedRun[ngramEnd];
+      const followKey = serialize(follow);
+
+      if (!this.model.has(stateKey)) {
+        return 0;
+      }
+
+      const stateMap = this.model.get(stateKey);
+
+      if (!stateMap.has(followKey)) {
+        return 0;
+      }
+
+      const followMap = stateMap.get(followKey);
+      const transitionProbability = followMap.count / stateMap.totalCount;
+
+      totalProbability *= transitionProbability;
+    }
+
+    return totalProbability;
   }
 }
 

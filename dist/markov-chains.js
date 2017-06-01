@@ -54,10 +54,9 @@ var DEFAULT_STATE_SIZE = 1;
 
 var Chain = function () {
   function Chain(corpusOrModel) {
-    var _ref = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
-
-    var _ref$stateSize = _ref.stateSize;
-    var stateSize = _ref$stateSize === undefined ? DEFAULT_STATE_SIZE : _ref$stateSize;
+    var _ref = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+        _ref$stateSize = _ref.stateSize,
+        stateSize = _ref$stateSize === undefined ? DEFAULT_STATE_SIZE : _ref$stateSize;
 
     _classCallCheck(this, Chain);
 
@@ -111,10 +110,9 @@ var Chain = function () {
 
       try {
         for (var _iterator = this.model[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-          var _step$value = _slicedToArray(_step.value, 2);
-
-          var state = _step$value[0];
-          var follow = _step$value[1];
+          var _step$value = _slicedToArray(_step.value, 2),
+              state = _step$value[0],
+              follow = _step$value[1];
 
           serialized.push([state, [].concat(_toConsumableArray(follow))]);
         }
@@ -163,9 +161,9 @@ var Chain = function () {
 
       try {
         for (var _iterator2 = state.values()[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-          var _step2$value = _step2.value;
-          var value = _step2$value.value;
-          var count = _step2$value.count;
+          var _step2$value = _step2.value,
+              value = _step2$value.value,
+              count = _step2$value.count;
 
           choices.push(value);
           weights.push(count);
@@ -208,7 +206,7 @@ var Chain = function () {
   }, {
     key: 'generate',
     value: function* generate() {
-      var fromState = arguments.length <= 0 || arguments[0] === undefined ? createBeginState(this.stateSize) : arguments[0];
+      var fromState = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : createBeginState(this.stateSize);
 
       var state = fromState;
 
@@ -237,13 +235,80 @@ var Chain = function () {
       var steps = [].concat(_toConsumableArray(this.generate(fromState)));
       return steps;
     }
+
+    /**
+     * Returns the probablity that `run` will be produced by this Markov chain
+     *
+     * @param run {any} the word that would be produced by this Markov chain.
+     * @param options {object} object with the following properties:
+     * {
+     *   includeBeginState {boolean} when true, calculate probability
+     *   including the BEGIN state. Otherwise, calculate probability starting
+     *   from the first `run` state
+     *
+     *   includeEndState {boolean} when true, calculate probability
+     *   including the END state. Otherwise, exclude the probability of reaching the END state
+     * }
+     */
+
+  }, {
+    key: 'likelihoodOf',
+    value: function likelihoodOf(run, _ref2) {
+      var _ref2$includeBeginSta = _ref2.includeBeginState,
+          includeBeginState = _ref2$includeBeginSta === undefined ? true : _ref2$includeBeginSta,
+          _ref2$includeEndState = _ref2.includeEndState,
+          includeEndState = _ref2$includeEndState === undefined ? true : _ref2$includeEndState;
+
+      var beginPadding = createBeginState(this.stateSize);
+      var paddedRun = [].concat(_toConsumableArray(beginPadding), _toConsumableArray(run), [END]);
+      // total probability is the probability of producing run.slice(n) on the n-th iteration
+      var totalProbability = 1;
+      var start = void 0;
+      var end = void 0;
+
+      if (includeBeginState) {
+        start = 0;
+      } else {
+        start = this.stateSize; // skip begin state padding
+      }
+
+      if (includeEndState) {
+        end = run.length + 1;
+      } else {
+        end = run.length;
+      }
+
+      for (var ngramStart = start; ngramStart < end; ngramStart++) {
+        var ngramEnd = ngramStart + this.stateSize;
+
+        var stateKey = createStateKey(paddedRun.slice(ngramStart, ngramEnd));
+        var follow = paddedRun[ngramEnd];
+        var followKey = (0, _javascriptStringify2.default)(follow);
+
+        if (!this.model.has(stateKey)) {
+          return 0;
+        }
+
+        var stateMap = this.model.get(stateKey);
+
+        if (!stateMap.has(followKey)) {
+          return 0;
+        }
+
+        var followMap = stateMap.get(followKey);
+        var transitionProbability = followMap.count / stateMap.totalCount;
+
+        totalProbability *= transitionProbability;
+      }
+
+      return totalProbability;
+    }
   }], [{
     key: 'build',
     value: function build(corpus) {
-      var _ref2 = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
-
-      var _ref2$stateSize = _ref2.stateSize;
-      var stateSize = _ref2$stateSize === undefined ? DEFAULT_STATE_SIZE : _ref2$stateSize;
+      var _ref3 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+          _ref3$stateSize = _ref3.stateSize,
+          stateSize = _ref3$stateSize === undefined ? DEFAULT_STATE_SIZE : _ref3$stateSize;
 
       if (!Array.isArray(corpus)) {
         throw new Error('Corpus must be a List or an Array');
@@ -275,7 +340,9 @@ var Chain = function () {
             var followKey = (0, _javascriptStringify2.default)(follow);
 
             if (!model.has(stateKey)) {
-              model.set(stateKey, new Map());
+              var _stateMap = new Map();
+              _stateMap.totalCount = 0;
+              model.set(stateKey, _stateMap);
             }
 
             var stateMap = model.get(stateKey);
@@ -286,6 +353,7 @@ var Chain = function () {
 
             var followMap = stateMap.get(followKey);
             followMap.count += 1;
+            stateMap.totalCount++;
           }
         }
       } catch (err) {
@@ -322,11 +390,10 @@ var Chain = function () {
 
       var stateSize = void 0;
 
-      var states = JSON.parse(jsonData).map(function (_ref3, index) {
-        var _ref4 = _slicedToArray(_ref3, 2);
-
-        var stateKey = _ref4[0];
-        var follow = _ref4[1];
+      var states = JSON.parse(jsonData).map(function (_ref4, index) {
+        var _ref5 = _slicedToArray(_ref4, 2),
+            stateKey = _ref5[0],
+            follow = _ref5[1];
 
         var currentStateSize = getStateSize(stateKey);
 
@@ -349,10 +416,9 @@ var Chain = function () {
 
         try {
           for (var _iterator4 = follow[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
-            var _step4$value = _slicedToArray(_step4.value, 2);
-
-            var followKey = _step4$value[0];
-            var followData = _step4$value[1];
+            var _step4$value = _slicedToArray(_step4.value, 2),
+                followKey = _step4$value[0],
+                followData = _step4$value[1];
 
             followMap.set(followKey, Object.assign({}, followData));
           }
@@ -444,7 +510,7 @@ function last(arr) {
  * A port of Python's `bisect.bisect_right`, similar to lodash's `sortedIndex`
  */
 function bisect(list, num) {
-  var high = arguments.length <= 2 || arguments[2] === undefined ? list.length : arguments[2];
+  var high = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : list.length;
 
   var currLow = 0;
   var currHigh = high;
